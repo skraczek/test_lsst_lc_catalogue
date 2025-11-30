@@ -1,13 +1,12 @@
 // server/index.js
-// Minimalny Express proxy: POST /api/adql {adql:"..."} -> TAP /sync (REQUEST=doQuery&LANG=ADQL&FORMAT=json&QUERY=...)
 const express = require('express');
 const fetch = require('node-fetch');
 const bodyParser = require('body-parser');
 const app = express();
-app.use(bodyParser.json({ limit: '5mb' }));
+app.use(bodyParser.json({ limit: '10mb' }));
 
-const TAP_URL = process.env.TAP_URL || 'https://data.lsst.cloud/api/tap'; // zmień jeśli inny endpoint
-const TAP_TOKEN = process.env.TAP_TOKEN || ''; // jeśli wymagany, ustaw jako zmienna środowiskowa
+const TAP_URL = process.env.TAP_URL || 'https://data.lsst.cloud/api/tap';
+const TAP_TOKEN = process.env.TAP_TOKEN || '';
 
 app.post('/api/adql', async (req, res) => {
   try {
@@ -23,7 +22,7 @@ app.post('/api/adql', async (req, res) => {
       body
     });
     const text = await resp.text();
-    // forward exact response body (JSON expected)
+    // forward exact response
     res.type('application/json').send(text);
   } catch (err) {
     console.error('proxy error', err);
@@ -32,4 +31,4 @@ app.post('/api/adql', async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Proxy listening on ${port}, TAP_URL=${TAP_URL}`));
+app.listen(port, ()=> console.log('proxy listening on', port, 'TAP_URL=' + TAP_URL));
