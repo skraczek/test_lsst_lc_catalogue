@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Rubin Lightcurve Explorer</title>
+  <title>Rubin Lightcurve Explorer — demo</title>
   <style>
-    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#f8fafc; color:#111827; margin:0; padding:20px;}
+    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#f8fafc; color:#111827; margin:0; padding:20px;}
     .container{max-width:1100px;margin:0 auto}
     header h1{font-size:20px;margin:0 0 12px;padding:8px 0;border-bottom:1px solid #e6edf3}
     .panel{background:#fff;padding:12px;border-radius:10px;box-shadow:0 1px 0 rgba(16,24,40,0.03); margin-bottom:12px}
@@ -26,20 +26,21 @@
 </head>
 <body>
   <div class="container">
-    <header><h1>Rubin Lightcurve Explorer</h1></header>
+    <header><h1>Rubin Lightcurve Explorer — demo</h1></header>
 
     <section class="panel">
       <div class="row" style="align-items:center">
         <div class="col" style="max-width:220px"><label>RA <input id="ra" type="text" value="150.0"></label></div>
         <div class="col" style="max-width:220px"><label>DEC <input id="dec" type="text" value="2.0"></label></div>
         <div class="col" style="max-width:140px"><label>Radius [deg] <input id="radius" type="number" step="0.01" value="0.2"></label></div>
-        <div class="col" style="max-width:140px"><label>Limit (objects) <input id="limit" type="number" value="20"></label></div>
-        <div style="min-width:160px">
-          <button id="fetchBtn">Pobierz ADQL</button>
+        <div class="col" style="max-width:140px"><label>Limit (objects) <input id="limit" type="number" value="6"></label></div>
+        <div style="min-width:170px">
+          <button id="fetchBtn">Pobierz (demo)</button>
+          <button id="realBtn" class="btn-ghost" style="margin-left:6px">Przełącz: użyj proxy</button>
           <button id="exportBtn" class="btn-ghost" style="margin-left:6px">Eksport CSV</button>
         </div>
       </div>
-      <div class="hint">Domyślnie POST → <code>/api/adql</code>. Jeśli używasz GitHub Pages: wdroż proxy (Vercel/Netlify) lub zmień URL w kodzie na CORS-enabled TAP.</div>
+      <div class="hint">Demo: jeśli nie masz proxy/TAP -> używany jest zestaw przykładowych krzywych. Kiedy masz proxy, kliknij "Przełącz: użyj proxy" i ustaw URL proxy w konsoli (poniżej opis).</div>
     </section>
 
     <section class="panel" style="display:flex;gap:12px">
@@ -67,15 +68,40 @@
       </div>
     </section>
 
-    <footer style="margin-top:12px" class="muted">Adnotacje są zapisywane lokalnie (localStorage). Aby centralne zapisy — dodaj backend zapisujący adnotacje.</footer>
+    <footer style="margin-top:12px" class="muted">Adnotacje zapisują się lokalnie w localStorage. Aby użyć rzeczywistego TAP: wdroż proxy i ustaw URL w konsoli (patrz instrukcję w kodzie).</footer>
   </div>
 
 <script>
-/* ---------- Konfiguracja (zmień jeśli potrzebujesz) ---------- */
-let ADQL_POST_URL = '/api/adql';       // domyślne — proxy (Vercel/Netlify) lub Express server
-const DEFAULT_ADQL_TABLE = `dp02_dc2_catalogs.ForcedSource`; // dostosuj do swojego TAP/DR/DP
+/* ---------------- Konfiguracja ----------------
+ ADQL_POST_URL: jeśli masz proxy, ustaw URL (np. https://my-proxy.vercel.app/api/adql)
+ W przeglądarce możesz wywołać:
+   window.setAdqlUrl('https://twoj-proxy.example.com/api/adql')
+-----------------------------------------------*/
+let USE_PROXY = false;                // przycisk "Przełącz: użyj proxy" zmienia to
+let ADQL_POST_URL = '/api/adql';      // domylnie proxy path (zmień po wdrożeniu)
+const DEFAULT_ADQL_TABLE = 'dp02_dc2_catalogs.ForcedSource'; // dopasuj gdy używasz realnego TAP
 
-/* ---------- ADQL builder ---------- */
+/* ---------- Demo data (pokazuje od razu zawartość) ---------- */
+function makeMockObjects(n=6){
+  const objs = [];
+  for(let i=0;i<n;i++){
+    const oid = 'MCK' + (1000+i);
+    const ra = 150 + (Math.random()-0.5)*0.5;
+    const dec = 2 + (Math.random()-0.5)*0.5;
+    const mjd0 = 59000 + i*10;
+    const meas = [];
+    for(let j=0;j<30;j++){
+      const mjd = mjd0 + j*1 + (Math.random()-0.5)*0.2;
+      const base = 18 + (i%3) + Math.sin(j/5 + i)/3;
+      const mag = base + (Math.random()-0.5)*0.2;
+      meas.push({ mjd: Math.round(mjd*1000)/1000, mag: Math.round(mag*1000)/1000, magerr: 0.02 + Math.random()*0.05, filter: ['g','r','i'][j%3] });
+    }
+    objs.push({ objectId: oid, ra, dec, measurements: meas, annotations: { name:'', category:'', note:'' } });
+  }
+  return objs;
+}
+
+/* ---------- ADQL builder (jeśli użyjesz proxy) ---------- */
 function buildAdqlForRegion(ra, dec, radiusDeg, maxRows){
   return `
 SELECT objectId, ra, dec, mjd, psfFluxMag as mag, psfFluxMagErr as magerr, filter
@@ -86,36 +112,30 @@ LIMIT ${maxRows * 1000}
 `;
 }
 
-/* ---------- HTTP POST helper ---------- */
-async function postAdql(adql){
+/* ---------- post to proxy (proxy expects JSON {adql: "..."}) ---------- */
+async function postAdqlViaProxy(adql){
   const resp = await fetch(ADQL_POST_URL, {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ adql })
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adql })
   });
   if (!resp.ok) throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
   const text = await resp.text();
-  try { return JSON.parse(text); } catch(e) { throw new Error('Nieparsowalna odpowiedź: ' + e.message + ' -> ' + text.slice(0,300)); }
+  try { return JSON.parse(text); } catch(e){ throw new Error('Nie udało się sparsować odpowiedzi proxy: ' + e.message); }
 }
 
-/* ---------- Parsery ---------- */
+/* ---------- Parsowanie możliwych formatów ---------- */
 function parseTapJson(data){
   if (Array.isArray(data)) return data;
   if (data.rows && Array.isArray(data.rows)) return data.rows;
   if (data.data && data.fields) {
     const names = data.fields.map(f=>f.name);
-    return data.data.map(r=>{
-      const obj = {};
-      for(let i=0;i<names.length;i++) obj[names[i]] = r[i];
-      return obj;
-    });
+    return data.data.map(r => { const obj = {}; for(let i=0;i<names.length;i++) obj[names[i]] = r[i]; return obj; });
   }
   if (Array.isArray(data.result)) return data.result;
   if (Array.isArray(data.data)) return data.data;
   return [];
 }
 
-/* ---------- Grouping ---------- */
+/* ---------- Grouping by objectId ---------- */
 function groupByObject(rows){
   const map = new Map();
   for (const r of rows){
@@ -124,14 +144,17 @@ function groupByObject(rows){
     if (!map.has(oid)) map.set(oid, { objectId: oid, ra: parseFloat(r.ra), dec: parseFloat(r.dec), measurements: [] });
     map.get(oid).measurements.push({ mjd: Number(r.mjd), mag: Number(r.mag), magerr: Number(r.magerr), filter: r.filter });
   }
-  return Array.from(map.values()).map(o=>({...o, measurements: o.measurements.sort((a,b)=>a.mjd - b.mjd)}));
+  return Array.from(map.values()).map(o=>({...o, measurements: o.measurements.sort((a,b)=>a.mjd-b.mjd)}));
 }
 
-/* ---------- State & UI refs ---------- */
-let objects = []; // {objectId, ra, dec, measurements, annotations, png}
+/* ---------- UI state ---------- */
+let objects = []; // array of {objectId, ra, dec, measurements, annotations, png}
 let currentIndex = 0;
+
+/* ---------- DOM refs ---------- */
 const listDiv = document.getElementById('list');
 const fetchBtn = document.getElementById('fetchBtn');
+const realBtn = document.getElementById('realBtn');
 const exportBtn = document.getElementById('exportBtn');
 const lcCanvas = document.getElementById('lcCanvas');
 const prevBtn = document.getElementById('prevBtn');
@@ -142,9 +165,11 @@ const categoryInput = document.getElementById('category');
 const noteInput = document.getElementById('note');
 const saveAnnotationBtn = document.getElementById('saveAnnotation');
 
+/* ---------- Local storage helpers ---------- */
 function saveToLocal(){ localStorage.setItem('rle_objects_v1', JSON.stringify(objects)); }
-function loadFromLocal(){ try { const s = localStorage.getItem('rle_objects_v1'); if (s) objects = JSON.parse(s); } catch(e){ console.warn(e); } }
+function loadFromLocal(){ try { const s=localStorage.getItem('rle_objects_v1'); if (s) objects = JSON.parse(s); } catch(e){ console.warn(e); } }
 
+/* ---------- Render list and current ---------- */
 function renderList(){
   listDiv.innerHTML = '';
   objects.forEach((o, idx)=>{
@@ -176,7 +201,7 @@ function renderCurrent(){
   renderList();
 }
 
-/* ---------- Canvas draw ---------- */
+/* ---------- Canvas drawing ---------- */
 function clearCanvas(){ const ctx = lcCanvas.getContext('2d'); ctx.clearRect(0,0,lcCanvas.width,lcCanvas.height); ctx.fillStyle='#f9fafb'; ctx.fillRect(0,0,lcCanvas.width,lcCanvas.height); }
 function drawLightcurve(meas){
   const dpr = window.devicePixelRatio || 1;
@@ -192,55 +217,4 @@ function drawLightcurve(meas){
   const minMag = Math.min(...mag), maxMag = Math.max(...mag);
   function sx(x){ return margin + ((x - minM)/( (maxM - minM) || 1 ))*w; }
   function sy(y){ return margin + (1 - ((y - minMag)/( (maxMag - minMag) || 1 )) )*h; }
-  ctx.strokeStyle = '#e6edf3'; ctx.beginPath(); ctx.moveTo(margin, margin); ctx.lineTo(margin, margin+h); ctx.lineTo(margin+w, margin+h); ctx.stroke();
-  ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5; ctx.beginPath();
-  meas.forEach((pt,i)=>{ const x=sx(pt.mjd), y=sy(pt.mag); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
-  ctx.stroke();
-  ctx.fillStyle = '#1e40af'; meas.forEach(pt=>{ const x=sx(pt.mjd), y=sy(pt.mag); ctx.beginPath(); ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fill(); });
-  ctx.fillStyle = '#374151'; ctx.font='12px sans-serif'; ctx.fillText('MJD', W/2, H-8); ctx.fillText('mag (lower = brighter)', 6, 12);
-}
-
-/* ---------- Events ---------- */
-fetchBtn.addEventListener('click', async ()=>{
-  fetchBtn.disabled=true; fetchBtn.textContent='Ładowanie...';
-  try {
-    const ra = document.getElementById('ra').value;
-    const dec = document.getElementById('dec').value;
-    const radius = document.getElementById('radius').value;
-    const limit = Number(document.getElementById('limit').value) || 20;
-    const adql = buildAdqlForRegion(ra, dec, radius, limit);
-    const raw = await postAdql(adql);
-    const rows = parseTapJson(raw);
-    const objs = groupByObject(rows).slice(0, limit);
-    loadFromLocal();
-    const merged = objs.map(o=>{
-      const prev = objects.find(x=>x.objectId==o.objectId);
-      return prev ? {...o, annotations: prev.annotations||{}} : {...o, annotations:{name:'',category:'',note:''}};
-    });
-    objects = merged;
-    currentIndex = 0;
-    saveToLocal();
-    renderCurrent();
-  } catch(e){ alert('Błąd: ' + e.message); console.error(e); }
-  finally { fetchBtn.disabled=false; fetchBtn.textContent='Pobierz ADQL'; }
-});
-
-prevBtn.addEventListener('click', ()=>{ currentIndex = Math.max(0, currentIndex-1); renderCurrent(); });
-nextBtn.addEventListener('click', ()=>{ currentIndex = Math.min(objects.length-1, currentIndex+1); renderCurrent(); });
-
-savePngBtn.addEventListener('click', ()=>{ if (!objects[currentIndex]) return; const data = lcCanvas.toDataURL('image/png'); objects[currentIndex].png = data; saveToLocal(); renderList(); alert('Zapisano PNG (localStorage). Możesz eksportować CSV.'); });
-
-saveAnnotationBtn.addEventListener('click', ()=>{ if (!objects[currentIndex]) return; const o = objects[currentIndex]; o.annotations = { name: nameInput.value, category: categoryInput.value, note: noteInput.value }; objects[currentIndex]=o; saveToLocal(); renderList(); alert('Adnotacja zapisana lokalnie.'); });
-
-exportBtn.addEventListener('click', ()=>{ const lines = objects.map(o=>{ const name = (o.annotations?.name||'').replace(/"/g,'""'); const cat  = (o.annotations?.category||'').replace(/"/g,'""'); const note = (o.annotations?.note||'').replace(/"/g,'""').replace(/\n/g,' '); const png  = o.png ? o.png : ''; return `"${o.objectId}","${o.ra}","${o.dec}","${name}","${cat}","${note}","${png}"`; }); const header = 'objectId,ra,dec,name,category,note,png'; const csv = [header, ...lines].join('\n'); const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='rubin_annotations.csv'; a.click(); URL.revokeObjectURL(url); });
-
-/* ---------- Init ---------- */
-function loadFromLocal(){ try { const s = localStorage.getItem('rle_objects_v1'); if (s) objects = JSON.parse(s); } catch(e){ console.warn(e); } }
-loadFromLocal(); renderCurrent();
-
-/* ---------- Helpful function for testing: change ADQL_POST_URL at runtime ---------- */
-window.setAdqlUrl = function(url){ ADQL_POST_URL = url; console.info('ADQL_POST_URL set to', ADQL_POST_URL); };
-
-</script>
-</body>
-</html>
+  ctx.strokeStyle = '#e6edf3'; ctx.beginPath(); ctx.moveTo(margin, margin); ctx.lineTo(margin, margin+h); ctx.lineTo
