@@ -1,128 +1,143 @@
 <!doctype html>
 <html lang="pl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Rubin Lightcurve Explorer — demo</title>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Rubin LC Browser — katalog</title>
   <style>
-    body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, Arial; background:#f8fafc; color:#111827; margin:0; padding:20px;}
-    .container{max-width:1100px;margin:0 auto}
-    header h1{font-size:20px;margin:0 0 12px;padding:8px 0;border-bottom:1px solid #e6edf3}
-    .panel{background:#fff;padding:12px;border-radius:10px;box-shadow:0 1px 0 rgba(16,24,40,0.03); margin-bottom:12px}
-    label{display:inline-flex;align-items:center;gap:6px}
-    input[type="text"], input[type="number"], textarea{padding:6px 8px;border-radius:8px;border:1px solid #e6edf3; width:100%}
-    .row{display:flex;gap:8px;flex-wrap:wrap}
-    .col{flex:1;min-width:150px}
+    body{font-family:Inter,system-ui,Arial;background:#f8fafc;color:#0f172a;margin:0;padding:18px}
+    .wrap{max-width:1100px;margin:0 auto}
+    header h1{margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid #e6edf3;font-size:20px}
+    .panel{background:#fff;padding:12px;border-radius:10px;box-shadow:0 1px 0 rgba(16,24,40,0.03);margin-bottom:12px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
     button{background:#2563eb;color:white;border:0;padding:8px 10px;border-radius:8px;cursor:pointer}
-    .btn-ghost{background:transparent;color:#111;border:1px solid #e6edf3}
-    #list { max-height:420px; overflow:auto; }
-    .item{display:flex;gap:8px;align-items:center;padding:8px;border-radius:8px;border:1px solid #eef2f6;margin-bottom:8px}
+    .btn-ghost{background:transparent;color:#111;border:1px solid #e6edf3;padding:7px 10px;border-radius:8px}
+    #catalog { max-height:420px; overflow:auto; margin-top:8px }
+    .obj{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;border:1px solid #eef2f6;margin-bottom:8px}
     .thumb{width:96px;height:64px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;font-size:11px;color:#94a3b8;overflow:hidden}
-    canvas{width:100%;height:260px;border-radius:8px;background:white}
-    .small{font-size:13px;color:#4b5563}
+    canvas{width:100%;height:280px;border-radius:8px;background:white}
     .muted{color:#6b7280;font-size:13px}
-    .hint{font-size:13px;color:#374151;margin-top:8px}
+    .folder{border:1px dashed #dbeafe;padding:8px;border-radius:8px;margin-bottom:8px}
+    input, textarea, select{padding:6px 8px;border-radius:8px;border:1px solid #e6edf3}
   </style>
 </head>
 <body>
-  <div class="container">
-    <header><h1>Rubin Lightcurve Explorer — demo</h1></header>
+  <div class="wrap">
+    <header><h1>Rubin Lightcurve Browser — katalog (stronicowany)</h1></header>
 
     <section class="panel">
-      <div class="row" style="align-items:center">
-        <div class="col" style="max-width:220px"><label>RA <input id="ra" type="text" value="150.0"></label></div>
-        <div class="col" style="max-width:220px"><label>DEC <input id="dec" type="text" value="2.0"></label></div>
-        <div class="col" style="max-width:140px"><label>Radius [deg] <input id="radius" type="number" step="0.01" value="0.2"></label></div>
-        <div class="col" style="max-width:140px"><label>Limit (objects) <input id="limit" type="number" value="6"></label></div>
-        <div style="min-width:170px">
-          <button id="fetchBtn">Pobierz (demo)</button>
-          <button id="realBtn" class="btn-ghost" style="margin-left:6px">Przełącz: użyj proxy</button>
-          <button id="exportBtn" class="btn-ghost" style="margin-left:6px">Eksport CSV</button>
-        </div>
+      <div class="row">
+        <div class="muted">Use proxy URL:</div>
+        <input id="proxyUrl" placeholder="https://my-proxy.vercel.app/api/adql" style="flex:1" />
+        <button id="setProxy">Set</button>
+        <button id="toggleUseProxy" class="btn-ghost">Use proxy: OFF</button>
+        <button id="loadCatalog" style="margin-left:auto">Load catalog page</button>
       </div>
-      <div class="hint">Demo: jeśli nie masz proxy/TAP -> używany jest zestaw przykładowych krzywych. Kiedy masz proxy, kliknij "Przełącz: użyj proxy" i ustaw URL proxy w konsoli (poniżej opis).</div>
-    </section>
-
-    <section class="panel" style="display:flex;gap:12px">
-      <div style="flex:2;min-width:300px">
-        <div class="small muted">Podgląd krzywej</div>
-        <canvas id="lcCanvas"></canvas>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button id="prevBtn" class="btn-ghost">Prev</button>
-          <button id="nextBtn" class="btn-ghost">Next</button>
-          <button id="savePng" style="margin-left:auto">Zapisz PNG</button>
-        </div>
-
-        <div style="margin-top:12px">
-          <div class="small">Adnotacje</div>
-          <input id="name" type="text" placeholder="Nazwa (opcjonalnie)" style="margin-top:6px;">
-          <input id="category" type="text" placeholder="Kategoria (opcjonalnie)" style="margin-top:6px;">
-          <textarea id="note" rows="3" placeholder="Opis / notatki" style="margin-top:6px"></textarea>
-          <div style="margin-top:6px"><button id="saveAnnotation">Zapisz</button></div>
-        </div>
+      <div style="margin-top:8px" class="muted">
+        Instrukcja: ustaw proxy (jeśli masz), kliknij "Set", potem "Use proxy" → ON, następnie "Load catalog page".
+        Domyślnie używa mock-danych — po ustawieniu proxy zacznie pobierać z TAP.
       </div>
-
-      <div style="flex:1;min-width:240px">
-        <div class="small muted">Lista / Galeria</div>
-        <div id="list" style="margin-top:8px"></div>
+      <div style="margin-top:10px" class="row">
+        <label>Page size <input id="pageSize" type="number" value="100" style="width:90px" /></label>
+        <label>Offset <input id="offset" type="number" value="0" style="width:120px" /></label>
+        <button id="nextPage" class="btn-ghost">Load next page (offset += pageSize)</button>
+        <button id="prevPage" class="btn-ghost">Prev page</button>
       </div>
     </section>
 
-    <footer style="margin-top:12px" class="muted">Adnotacje zapisują się lokalnie w localStorage. Aby użyć rzeczywistego TAP: wdroż proxy i ustaw URL w konsoli (patrz instrukcję w kodzie).</footer>
+    <section style="display:flex;gap:12px">
+      <div style="flex:2">
+        <div class="panel">
+          <div class="muted">Podgląd krzywej (kliknij obiekt z listy po prawej)</div>
+          <canvas id="lcCanvas"></canvas>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button id="savePng">Save PNG</button>
+            <button id="addToFolder" class="btn-ghost">Dodaj do folderu</button>
+            <button id="prevObj" class="btn-ghost">Prev obj</button>
+            <button id="nextObj" class="btn-ghost">Next obj</button>
+            <div style="margin-left:auto">
+              <button id="exportCsv" class="btn-ghost">Eksport CSV</button>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="muted">Adnotacje / opis</div>
+            <input id="name" placeholder="Nazwa" style="width:100%;margin-top:6px" />
+            <input id="category" placeholder="Kategoria" style="width:100%;margin-top:6px" />
+            <textarea id="note" placeholder="Opis / notatki" rows="3" style="width:100%;margin-top:6px"></textarea>
+            <div style="display:flex;gap:8px;margin-top:6px">
+              <button id="saveAnnotation">Zapisz adnotację</button>
+              <button id="removeFromFolder" class="btn-ghost">Usuń z folderu</button>
+            </div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="muted">Foldery / kolekcje</div>
+          <div id="folders"></div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <input id="newFolderName" placeholder="Nowy folder" />
+            <button id="createFolder" class="btn-ghost">Utwórz</button>
+          </div>
+        </div>
+      </div>
+
+      <div style="flex:1">
+        <div class="panel">
+          <div class="muted">Katalog obiektów (strona)</div>
+          <div id="catalog"></div>
+        </div>
+      </div>
+    </section>
+
+    <footer style="margin-top:12px" class="muted">Adnotacje, foldery i PNG przechowywane lokalnie (localStorage). Aby pobrać rzeczywiste dane LSST musisz ustawić proxy i włączyć "Use proxy".</footer>
   </div>
 
 <script>
-/* ---------------- Konfiguracja ----------------
- ADQL_POST_URL: jeśli masz proxy, ustaw URL (np. https://my-proxy.vercel.app/api/adql)
- W przeglądarce możesz wywołać:
-   window.setAdqlUrl('https://twoj-proxy.example.com/api/adql')
------------------------------------------------*/
-let USE_PROXY = false;                // przycisk "Przełącz: użyj proxy" zmienia to
-let ADQL_POST_URL = '/api/adql';      // domylnie proxy path (zmień po wdrożeniu)
-const DEFAULT_ADQL_TABLE = 'dp02_dc2_catalogs.ForcedSource'; // dopasuj gdy używasz realnego TAP
+/* ---------------- Konfiguracja i stan ---------------- */
+let ADQL_POST_URL = '/api/adql';     // zmień przez window.setAdqlUrl(...) lub pole input + Set
+let USE_PROXY = false;
+const TABLE = 'dp02_dc2_catalogs.Object'; // tabela z listą obiektów — możesz zmienić
+// Czy SPRAWDŹ: w DP vs DR nazwy tabel mogą być inne; jeśli nie działa -> podaj właściwą nazwę tabeli.
+let pageSize = 100;
+let offset = 0;
 
-/* ---------- Demo data (pokazuje od razu zawartość) ---------- */
-function makeMockObjects(n=6){
-  const objs = [];
-  for(let i=0;i<n;i++){
-    const oid = 'MCK' + (1000+i);
-    const ra = 150 + (Math.random()-0.5)*0.5;
-    const dec = 2 + (Math.random()-0.5)*0.5;
-    const mjd0 = 59000 + i*10;
-    const meas = [];
-    for(let j=0;j<30;j++){
-      const mjd = mjd0 + j*1 + (Math.random()-0.5)*0.2;
-      const base = 18 + (i%3) + Math.sin(j/5 + i)/3;
-      const mag = base + (Math.random()-0.5)*0.2;
-      meas.push({ mjd: Math.round(mjd*1000)/1000, mag: Math.round(mag*1000)/1000, magerr: 0.02 + Math.random()*0.05, filter: ['g','r','i'][j%3] });
-    }
-    objs.push({ objectId: oid, ra, dec, measurements: meas, annotations: { name:'', category:'', note:'' } });
-  }
-  return objs;
+let catalog = []; // lista obiektów (dla aktualnej strony): {objectId, ra, dec}
+let currentIndex = -1; // index w catalog
+let objectsCache = {}; // cache pomiarów po objectId -> {measurements, png, annotations}
+
+/* ---------- Helpers: ADQL ---------- */
+function buildCatalogAdql(limit, offsetVal){
+  // Pobierz podstawowe informacje o obiektach; dopasuj kolumny jeśli trzeba
+  return `SELECT objectId, ra, dec FROM ${TABLE} ORDER BY objectId LIMIT ${limit} OFFSET ${offsetVal}`;
+}
+function buildMeasurementsAdql(objectId){
+  // Tabela z pomiarami (dostosuj do Twojego TAP: ForcedSource/Source/ForcedSource...)
+  // Uwaga: objectId może być liczbowy lub string - cytujemy jako literal jeśli zawiera litery.
+  const oid = String(objectId);
+  // jeżeli objectId jest liczbowe, unikamy cytowania; tutaj robimy bezpieczną wersję:
+  const where = isFinite(Number(oid)) ? `objectId = ${oid}` : `objectId = '${oid.replace(/'/g,"''")}'`;
+  // adjust measurements table name if needed:
+  const MEAS_TABLE = 'dp02_dc2_catalogs.ForcedSource';
+  return `SELECT mjd, psfFluxMag as mag, psfFluxMagErr as magerr, filter FROM ${MEAS_TABLE} WHERE ${where} ORDER BY mjd`;
 }
 
-/* ---------- ADQL builder (jeśli użyjesz proxy) ---------- */
-function buildAdqlForRegion(ra, dec, radiusDeg, maxRows){
-  return `
-SELECT objectId, ra, dec, mjd, psfFluxMag as mag, psfFluxMagErr as magerr, filter
-FROM ${DEFAULT_ADQL_TABLE}
-WHERE CONTAINS(POINT('ICRS', ra, dec), CIRCLE('ICRS', ${ra}, ${dec}, ${radiusDeg}))=1
-ORDER BY objectId, mjd
-LIMIT ${maxRows * 1000}
-`;
-}
-
-/* ---------- post to proxy (proxy expects JSON {adql: "..."}) ---------- */
-async function postAdqlViaProxy(adql){
+/* ---------- POST ADQL via proxy (proxy musi zwracać JSON) ---------- */
+async function postAdql(adql){
+  if (!USE_PROXY) throw new Error('Proxy not enabled. Set Use proxy = ON and set ADQL_POST_URL.');
   const resp = await fetch(ADQL_POST_URL, {
-    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ adql })
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ adql })
   });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
-  const text = await resp.text();
-  try { return JSON.parse(text); } catch(e){ throw new Error('Nie udało się sparsować odpowiedzi proxy: ' + e.message); }
+  if (!resp.ok) {
+    const txt = await resp.text();
+    throw new Error('HTTP ' + resp.status + ' ' + resp.statusText + ' — ' + txt.slice(0,200));
+  }
+  const txt = await resp.text();
+  try { return JSON.parse(txt); } catch(e) { throw new Error('Invalid JSON from proxy: ' + e.message + ' -> ' + txt.slice(0,200)); }
 }
 
-/* ---------- Parsowanie możliwych formatów ---------- */
+/* ---------- Parse common TAP JSON shapes ---------- */
 function parseTapJson(data){
   if (Array.isArray(data)) return data;
   if (data.rows && Array.isArray(data.rows)) return data.rows;
@@ -135,74 +150,64 @@ function parseTapJson(data){
   return [];
 }
 
-/* ---------- Grouping by objectId ---------- */
-function groupByObject(rows){
-  const map = new Map();
-  for (const r of rows){
-    const oid = r.objectId ?? r.objid ?? r.id ?? r['object id'];
-    if (!oid) continue;
-    if (!map.has(oid)) map.set(oid, { objectId: oid, ra: parseFloat(r.ra), dec: parseFloat(r.dec), measurements: [] });
-    map.get(oid).measurements.push({ mjd: Number(r.mjd), mag: Number(r.mag), magerr: Number(r.magerr), filter: r.filter });
-  }
-  return Array.from(map.values()).map(o=>({...o, measurements: o.measurements.sort((a,b)=>a.mjd-b.mjd)}));
-}
-
-/* ---------- UI state ---------- */
-let objects = []; // array of {objectId, ra, dec, measurements, annotations, png}
-let currentIndex = 0;
-
-/* ---------- DOM refs ---------- */
-const listDiv = document.getElementById('list');
-const fetchBtn = document.getElementById('fetchBtn');
-const realBtn = document.getElementById('realBtn');
-const exportBtn = document.getElementById('exportBtn');
+/* ---------- UI: catalog rendering ---------- */
+const catalogDiv = document.getElementById('catalog');
 const lcCanvas = document.getElementById('lcCanvas');
-const prevBtn = document.getElementById('prevBtn');
-const nextBtn = document.getElementById('nextBtn');
-const savePngBtn = document.getElementById('savePng');
-const nameInput = document.getElementById('name');
-const categoryInput = document.getElementById('category');
-const noteInput = document.getElementById('note');
-const saveAnnotationBtn = document.getElementById('saveAnnotation');
+const pageSizeInput = document.getElementById('pageSize');
+const offsetInput = document.getElementById('offset');
 
-/* ---------- Local storage helpers ---------- */
-function saveToLocal(){ localStorage.setItem('rle_objects_v1', JSON.stringify(objects)); }
-function loadFromLocal(){ try { const s=localStorage.getItem('rle_objects_v1'); if (s) objects = JSON.parse(s); } catch(e){ console.warn(e); } }
-
-/* ---------- Render list and current ---------- */
-function renderList(){
-  listDiv.innerHTML = '';
-  objects.forEach((o, idx)=>{
-    const it = document.createElement('div'); it.className='item';
+function renderCatalog(){
+  catalogDiv.innerHTML = '';
+  catalog.forEach((o, idx) => {
+    const el = document.createElement('div'); el.className='obj';
     const thumb = document.createElement('div'); thumb.className='thumb';
-    if (o.png){ const img = document.createElement('img'); img.src = o.png; img.style.width='100%'; thumb.innerHTML=''; thumb.appendChild(img); } else { thumb.textContent='no png'; }
-    it.appendChild(thumb);
+    const cached = objectsCache[o.objectId];
+    if (cached && cached.png){ const img = document.createElement('img'); img.src = cached.png; img.style.width='100%'; thumb.innerHTML=''; thumb.appendChild(img); } else thumb.textContent = 'no png';
+    el.appendChild(thumb);
     const info = document.createElement('div'); info.style.flex='1';
-    const title = document.createElement('div'); title.textContent = o.annotations?.name || o.objectId; title.style.fontWeight='600';
-    const coords = document.createElement('div'); coords.className='small muted'; coords.textContent = `${o.ra?.toFixed(5)||''}, ${o.dec?.toFixed(5)||''}`;
-    const cat = document.createElement('div'); cat.className='small'; cat.textContent = o.annotations?.category || '';
-    info.appendChild(title); info.appendChild(coords); info.appendChild(cat);
-    it.appendChild(info);
-    const openBtn = document.createElement('button'); openBtn.textContent='Open'; openBtn.onclick = ()=>{ currentIndex = idx; renderCurrent(); };
-    it.appendChild(openBtn);
-    listDiv.appendChild(it);
+    const title = document.createElement('div'); title.textContent = o.objectId; title.style.fontWeight='600';
+    const coords = document.createElement('div'); coords.className='muted'; coords.textContent = `${o.ra?.toFixed(5)||''}, ${o.dec?.toFixed(5)||''}`;
+    info.appendChild(title); info.appendChild(coords);
+    el.appendChild(info);
+    const btn = document.createElement('button'); btn.textContent='Open'; btn.onclick = ()=> openObject(idx);
+    el.appendChild(btn);
+    catalogDiv.appendChild(el);
   });
 }
 
-function renderCurrent(){
-  if (objects.length===0){ clearCanvas(); nameInput.value=''; categoryInput.value=''; noteInput.value=''; renderList(); return; }
-  if (currentIndex<0) currentIndex=0;
-  if (currentIndex>=objects.length) currentIndex=objects.length-1;
-  const o = objects[currentIndex];
-  nameInput.value = o.annotations?.name || '';
-  categoryInput.value = o.annotations?.category || '';
-  noteInput.value = o.annotations?.note || '';
-  drawLightcurve(o.measurements);
-  renderList();
+/* ---------- Open object: load measurements (via proxy) or from cache ---------- */
+async function openObject(idx){
+  if (idx<0 || idx>=catalog.length) return;
+  currentIndex = idx;
+  const obj = catalog[idx];
+  const id = obj.objectId;
+  if (objectsCache[id] && objectsCache[id].measurements) {
+    drawLightcurve(objectsCache[id].measurements);
+    fillAnnotationFields(id);
+    return;
+  }
+  try {
+    showCanvasLoading(true);
+    const adql = buildMeasurementsAdql(id);
+    const raw = await postAdql(adql);
+    const rows = parseTapJson(raw);
+    const meas = rows.map(r => ({ mjd: Number(r.mjd), mag: Number(r.mag), magerr: Number(r.magerr), filter: r.filter }));
+    objectsCache[id] = objectsCache[id] || {};
+    objectsCache[id].measurements = meas;
+    // try to keep annotations if existed in localStorage
+    const saved = loadStorageObject(id);
+    if (saved) objectsCache[id] = { ...objectsCache[id], ...saved };
+    drawLightcurve(meas);
+    fillAnnotationFields(id);
+    renderCatalog();
+  } catch(e) {
+    alert('Błąd podczas pobierania pomiarów: ' + e.message);
+    console.error(e);
+  } finally { showCanvasLoading(false); }
 }
 
 /* ---------- Canvas drawing ---------- */
-function clearCanvas(){ const ctx = lcCanvas.getContext('2d'); ctx.clearRect(0,0,lcCanvas.width,lcCanvas.height); ctx.fillStyle='#f9fafb'; ctx.fillRect(0,0,lcCanvas.width,lcCanvas.height); }
+function showCanvasLoading(on){ const ctx = lcCanvas.getContext('2d'); if(on){ ctx.clearRect(0,0,lcCanvas.width,lcCanvas.height); ctx.fillStyle='#f8fafc'; ctx.fillRect(0,0,lcCanvas.width,lcCanvas.height); ctx.fillStyle='#6b7280'; ctx.fillText('Ładowanie...',10,20);} }
 function drawLightcurve(meas){
   const dpr = window.devicePixelRatio || 1;
   lcCanvas.width = lcCanvas.clientWidth * dpr;
@@ -210,11 +215,223 @@ function drawLightcurve(meas){
   const ctx = lcCanvas.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,lcCanvas.clientWidth,lcCanvas.clientHeight);
   ctx.fillStyle='#fff'; ctx.fillRect(0,0,lcCanvas.clientWidth,lcCanvas.clientHeight);
-  if (!meas || meas.length===0){ ctx.fillStyle='#6b7280'; ctx.fillText('Brak danych', 10,20); return; }
+  if (!meas || meas.length===0){ ctx.fillStyle='#6b7280'; ctx.fillText('Brak danych',10,20); return; }
   const margin = 36; const W = lcCanvas.clientWidth, H = lcCanvas.clientHeight; const w = W - margin*2, h = H - margin*2;
   const mjd = meas.map(m=>m.mjd); const mag = meas.map(m=>m.mag);
   const minM = Math.min(...mjd), maxM = Math.max(...mjd);
   const minMag = Math.min(...mag), maxMag = Math.max(...mag);
   function sx(x){ return margin + ((x - minM)/( (maxM - minM) || 1 ))*w; }
   function sy(y){ return margin + (1 - ((y - minMag)/( (maxMag - minMag) || 1 )) )*h; }
-  ctx.strokeStyle = '#e6edf3'; ctx.beginPath(); ctx.moveTo(margin, margin); ctx.lineTo(margin, margin+h); ctx.lineTo
+  ctx.strokeStyle = '#e6edf3'; ctx.beginPath(); ctx.moveTo(margin, margin); ctx.lineTo(margin, margin+h); ctx.lineTo(margin+w, margin+h); ctx.stroke();
+  ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5; ctx.beginPath();
+  meas.forEach((pt,i)=>{ const x=sx(pt.mjd), y=sy(pt.mag); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+  ctx.stroke();
+  ctx.fillStyle = '#1e40af'; meas.forEach(pt=>{ const x=sx(pt.mjd), y=sy(pt.mag); ctx.beginPath(); ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fill(); });
+  ctx.fillStyle = '#374151'; ctx.font='12px sans-serif'; ctx.fillText('MJD', W/2, H-8); ctx.fillText('mag (lower = brighter)', 6, 12);
+}
+
+/* ---------- Annotations, folders, storage ---------- */
+function storageKey(){ return 'rubin_browser_v1'; }
+function loadAllStorage(){ try { return JSON.parse(localStorage.getItem(storageKey()) || '{}'); } catch(e){ return {}; } }
+function saveAllStorage(obj){ localStorage.setItem(storageKey(), JSON.stringify(obj)); }
+
+function loadStorageObject(objectId){
+  const all = loadAllStorage();
+  return all.objects && all.objects[objectId] ? all.objects[objectId] : null;
+}
+function saveStorageObject(objectId, data){
+  const all = loadAllStorage();
+  all.objects = all.objects || {};
+  all.objects[objectId] = { ...(all.objects[objectId] || {}), ...data };
+  saveAllStorage(all);
+}
+function deleteStorageObjectFromFolder(objectId, folderName){
+  const all = loadAllStorage();
+  if (!all.folders || !all.folders[folderName]) return;
+  all.folders[folderName] = all.folders[folderName].filter(id => id !== objectId);
+  saveAllStorage(all);
+}
+function addObjectToFolder(objectId, folderName){
+  const all = loadAllStorage();
+  all.folders = all.folders || {};
+  all.folders[folderName] = all.folders[folderName] || [];
+  if (!all.folders[folderName].includes(objectId)) all.folders[folderName].push(objectId);
+  saveAllStorage(all);
+}
+
+/* ---------- Render folders UI ---------- */
+function renderFolders(){
+  const container = document.getElementById('folders');
+  container.innerHTML = '';
+  const all = loadAllStorage();
+  const folders = all.folders || {};
+  for (const name of Object.keys(folders)){
+    const div = document.createElement('div'); div.className='folder';
+    const title = document.createElement('div'); title.textContent = name; title.style.fontWeight='600';
+    const list = document.createElement('div'); list.style.marginTop='6px';
+    folders[name].forEach(id => {
+      const el = document.createElement('div'); el.style.display='flex'; el.style.justifyContent='space-between'; el.style.alignItems='center';
+      el.textContent = id;
+      const btn = document.createElement('button'); btn.textContent='Open'; btn.onclick = ()=>{
+        // try to find object in current catalog, otherwise set currentIndex=-1 and fetch measurements
+        const idx = catalog.findIndex(o=>o.objectId==id);
+        if (idx>=0) openObject(idx);
+        else {
+          // insert temporary entry and open by direct fetch
+          openObjectById(id);
+        }
+      };
+      const rm = document.createElement('button'); rm.textContent='Remove'; rm.className='btn-ghost'; rm.onclick = ()=>{ deleteStorageObjectFromFolder(id,name); renderFolders(); };
+      const wrap = document.createElement('div'); wrap.style.display='flex'; wrap.style.gap='6px'; wrap.appendChild(btn); wrap.appendChild(rm);
+      el.appendChild(wrap);
+      list.appendChild(el);
+    });
+    div.appendChild(title); div.appendChild(list);
+    container.appendChild(div);
+  }
+}
+
+/* ---------- Open object by id (direct fetch even jeśli nie w current catalog) ---------- */
+async function openObjectById(objectId){
+  try {
+    showCanvasLoading(true);
+    const adql = buildMeasurementsAdql(objectId);
+    const raw = await postAdql(adql);
+    const rows = parseTapJson(raw);
+    const meas = rows.map(r => ({ mjd: Number(r.mjd), mag: Number(r.mag), magerr: Number(r.magerr), filter: r.filter }));
+    objectsCache[objectId] = objectsCache[objectId] || {};
+    objectsCache[objectId].measurements = meas;
+    const saved = loadStorageObject(objectId);
+    if (saved) objectsCache[objectId] = { ...objectsCache[objectId], ...saved };
+    drawLightcurve(meas);
+    fillAnnotationFields(objectId);
+  } catch(e){
+    alert('Błąd fetch by id: ' + e.message);
+    console.error(e);
+  } finally { showCanvasLoading(false); }
+}
+
+/* ---------- Fill annotation input fields for current object ---------- */
+function fillAnnotationFields(objectId){
+  const saved = loadStorageObject(objectId) || {};
+  document.getElementById('name').value = saved.name || '';
+  document.getElementById('category').value = saved.category || '';
+  document.getElementById('note').value = saved.note || '';
+}
+
+/* ---------- Buttons actions ---------- */
+document.getElementById('setProxy').addEventListener('click', ()=>{
+  const url = document.getElementById('proxyUrl').value.trim();
+  if (!url) return alert('Wpisz URL proxy');
+  ADQL_POST_URL = url;
+  alert('ADQL_POST_URL ustawione na: ' + ADQL_POST_URL + '\nPamiętaj: proxy musi przyjmować POST {adql:"..."} i wykonać do TAP /sync.');
+});
+document.getElementById('toggleUseProxy').addEventListener('click', ()=>{
+  USE_PROXY = !USE_PROXY;
+  document.getElementById('toggleUseProxy').textContent = 'Use proxy: ' + (USE_PROXY ? 'ON' : 'OFF');
+});
+
+document.getElementById('pageSize').addEventListener('change', (e)=>{ pageSize = Number(e.target.value) || 100; });
+document.getElementById('offset').addEventListener('change', (e)=>{ offset = Number(e.target.value) || 0; });
+
+document.getElementById('nextPage').addEventListener('click', ()=>{ offset += pageSize; document.getElementById('offset').value = offset; loadCatalogPage(); });
+document.getElementById('prevPage').addEventListener('click', ()=>{ offset = Math.max(0, offset - pageSize); document.getElementById('offset').value = offset; loadCatalogPage(); });
+
+document.getElementById('loadCatalog').addEventListener('click', ()=>{ offset = Number(document.getElementById('offset').value) || 0; loadCatalogPage(); });
+
+async function loadCatalogPage(){
+  // jeśli proxy OFF -> generujemy mock listę (demo). Jeśli ON -> pobieramy katalog z TAP.
+  if (!USE_PROXY){
+    // demo: utwórz pageSize sztuk mock obiektów
+    catalog = [];
+    for (let i=0;i<pageSize;i++){
+      const id = 'MOCK_'+(offset + i + 1);
+      const ra = 150 + (Math.random()-0.5)*10;
+      const dec = 2 + (Math.random()-0.5)*4;
+      catalog.push({ objectId: id, ra, dec });
+    }
+    renderCatalog();
+    return;
+  }
+  try {
+    const adql = buildCatalogAdql(pageSize, offset);
+    const raw = await postAdql(adql);
+    const rows = parseTapJson(raw);
+    // rows expected to have objectId, ra, dec
+    catalog = rows.map(r => ({ objectId: r.objectId ?? r.objid ?? r.id, ra: parseFloat(r.ra), dec: parseFloat(r.dec) }));
+    renderCatalog();
+  } catch(e){
+    alert('Błąd pobierania katalogu: ' + e.message);
+    console.error(e);
+  }
+}
+
+/* ---------- Save annotation, folder management, PNG ---------- */
+document.getElementById('saveAnnotation').addEventListener('click', ()=>{
+  const obj = (currentIndex>=0 && currentIndex < catalog.length) ? catalog[currentIndex] : null;
+  if (!obj) return alert('Brak otwartego obiektu z listy (lub otwórz obiekt przez folder).');
+  const id = obj.objectId;
+  const data = { name: document.getElementById('name').value, category: document.getElementById('category').value, note: document.getElementById('note').value };
+  // save PNG if rendered
+  try { const png = lcCanvas.toDataURL('image/png'); data.png = png; objectsCache[id] = objectsCache[id] || {}; objectsCache[id].png = png; } catch(e){}
+  saveStorageObject(id, data);
+  renderCatalog(); renderFolders();
+  alert('Adnotacja zapisana lokalnie.');
+});
+
+document.getElementById('savePng').addEventListener('click', ()=>{
+  const obj = (currentIndex>=0 && currentIndex < catalog.length) ? catalog[currentIndex] : null;
+  if (!obj) return alert('Brak otwartego obiektu do zapisania PNG.');
+  const id = obj.objectId; const png = lcCanvas.toDataURL('image/png');
+  objectsCache[id] = objectsCache[id] || {}; objectsCache[id].png = png;
+  saveStorageObject(id, { png });
+  renderCatalog();
+  alert('PNG zapisane lokalnie.');
+});
+
+document.getElementById('createFolder').addEventListener('click', ()=>{
+  const name = document.getElementById('newFolderName').value.trim();
+  if (!name) return alert('Podaj nazwę folderu');
+  const all = loadAllStorage(); all.folders = all.folders || {}; if (!all.folders[name]) all.folders[name] = []; saveAllStorage(all); renderFolders();
+});
+
+document.getElementById('addToFolder').addEventListener('click', ()=>{
+  const obj = (currentIndex>=0 && currentIndex < catalog.length) ? catalog[currentIndex] : null;
+  if (!obj) return alert('Brak otwartego obiektu.');
+  const name = prompt('Do którego folderu dodać? (dokładna nazwa)'); if (!name) return;
+  addObjectToFolder(obj.objectId, name);
+  renderFolders();
+});
+
+document.getElementById('removeFromFolder').addEventListener('click', ()=>{
+  const obj = (currentIndex>=0 && currentIndex < catalog.length) ? catalog[currentIndex] : null;
+  if (!obj) return alert('Brak otwartego obiektu.');
+  const name = prompt('Z którego folderu usunąć? (dokładna nazwa)'); if (!name) return;
+  deleteStorageObjectFromFolder(obj.objectId, name);
+  renderFolders();
+});
+
+document.getElementById('nextObj').addEventListener('click', ()=>{ if (catalog.length===0) return; currentIndex = Math.min(catalog.length-1, (currentIndex<0?0:currentIndex+1)); openObject(currentIndex); });
+document.getElementById('prevObj').addEventListener('click', ()=>{ if (catalog.length===0) return; currentIndex = Math.max(0, currentIndex-1); openObject(currentIndex); });
+
+document.getElementById('exportCsv').addEventListener('click', ()=>{
+  const all = loadAllStorage();
+  const rows = [];
+  const objs = all.objects || {};
+  for (const id in objs){
+    const o = objs[id];
+    rows.push([id, o.name||'', o.category||'', (o.note||'').replace(/\\n/g,' '), o.png||''].map(v=>`"${(String(v||'')).replace(/"/g,'""')}"`).join(','));
+  }
+  const csv = ['objectId,name,category,note,png', ...rows].join('\\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'}); const url = URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='rubin_annotations.csv'; a.click(); URL.revokeObjectURL(url);
+});
+
+/* ---------- Initialization ---------- */
+renderFolders();
+pageSize = Number(document.getElementById('pageSize').value);
+offset = Number(document.getElementById('offset').value);
+
+window.setAdqlUrl = function(url){ ADQL_POST_URL = url; alert('ADQL_POST_URL ustawione: ' + ADQL_POST_URL); };
+</script>
+</body>
+</html>
