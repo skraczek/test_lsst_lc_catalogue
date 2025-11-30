@@ -1,0 +1,223 @@
+import React, { useState, useEffect } from 'react'
+
+// Single-file React component ready to paste into a GitHub Pages React app
+// Usage:
+// - Host on GitHub Pages (gh-pages) or as a static site. This is a template.
+// - The app runs ADQL queries against a TAP sync endpoint (example: MAST TAP)
+// - The ADQL should return at least: ra, dec and a product/preview/access URL column (names vary per TAP table)
+// - CORS: public TAP endpoints often allow CORS but some do not; if CORS blocks you may need a small proxy or GitHub Action to fetch server-side.
+
+export default function TessAdqlLightcurvesApp() {
+  const [adql, setAdql] = useState(`-- PRZYKŁADOWY ADQL (dostosuj nazwę tabeli i kolumn dla MAST TAP)\n-- ZWRÓĆ kolumny: ra, dec, <product_url_or_preview_url>\nSELECT TOP 100 ra, dec, obs_id, access_url FROM <TESS_DATA_PRODUCTS_TABLE> WHERE obs_collection = 'TESS' AND dataproduct_type = 'timeseries'`)
+  const [loading, setLoading] = useState(false)
+  const [rows, setRows] = useState([])
+  const [error, setError] = useState(null)
+  const [annotations, setAnnotations] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('tess_annotations') || '{}') } catch(e){ return {} }
+  })
+
+  useEffect(() => {
+    localStorage.setItem('tess_annotations', JSON.stringify(annotations))
+  }, [annotations])
+
+  function downloadCSV() {
+    const header = ['name','category','description','ra','dec','thumbnail']
+    const lines = [header.join(',')]
+    rows.forEach(r => {
+      const id = r._rowid || r.obs_id || (r.access_url || r.preview_url || r.product_url) || ''
+      const ann = annotations[id] || {}
+      const line = [ann.name||'', ann.category||'', '"'+(ann.description||'')+'"', r.ra||'', r.dec||'', (r.preview_url||r.access_url||'')]
+      lines.push(line.join(','))
+    })
+    const blob = new Blob([lines.join('\n')], {type:'text/csv'})
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = 'tess_annotations.csv'; a.click(); URL.revokeObjectURL(url)
+  }
+
+  async function runAdql() {
+    setError(null)
+    setLoading(true)
+    setRows([])
+    try {
+      // This uses a TAP sync endpoint pattern. Replace endpoint if needed.
+      // Example endpoint (MAST TAP): https://mast.stsci.edu/tap/sync
+      // We request FORMAT=csv for easier parsing client-side.
+      const endpoint = 'https://mast.stsci.edu/tap/sync'
+      const params = new URLSearchParams()
+      params.set('REQUEST','doQuery')
+      params.set('LANG','ADQL')
+      params.set('FORMAT','csv')
+      params.set('PHASE','RUN')
+      params.set('QUERY', adql)
+
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+        },
+        body: params.toString()
+      })
+      if (!resp.ok) throw new Error(`TAP error: ${resp.status} ${resp.statusText}`)
+      const text = await resp.text()
+      // parse CSV (simple)
+      const parsed = parseCsv(text)
+      // normalize column names to lowercase
+      const normalized = parsed.map(r => {
+        const obj = {}
+        Object.keys(r).forEach(k => obj[k.trim().toLowerCase()] = r[k])
+        return obj
+      })
+
+      // Heurystyka: znajdź kolumnę z URL (preview/access/product)
+      const withUrls = normalized.map((r, i) => {
+        const url = r.preview_url || r.access_url || r.product_url || r.data_uri || r.url || r.filename || ''
+        return {...r, _rowid: r.obs_id || `row_${i}`, preview_url: url}
+      })
+
+      setRows(withUrls)
+    } catch(err) {
+      console.error(err)
+      setError(String(err))
+    } finally { setLoading(false) }
+  }
+
+  function parseCsv(text) {
+    // very small CSV parser (handles quoted fields)
+    const lines = text.trim().split('\n')
+    if (lines.length === 0) return []
+    const headings = splitCsvLine(lines[0])
+    return lines.slice(1).map(line => {
+      const fields = splitCsvLine(line)
+      const obj = {}
+      for (let i=0;i<headings.length;i++) obj[headings[i]] = fields[i] || ''
+      return obj
+    })
+  }
+  function splitCsvLine(line) {
+    const res = []
+    let cur = ''
+    let inQuotes = false
+    for (let i=0;i<line.length;i++){
+      const ch = line[i]
+      if (ch === '"') { inQuotes = !inQuotes; continue }
+      if (ch === ',' && !inQuotes) { res.push(cur); cur=''; continue }
+      cur += ch
+    }
+    res.push(cur)
+    return res.map(s => s.trim())
+  }
+
+  function updateAnnotation(rowid, patch) {
+    setAnnotations(prev => ({ ...prev, [rowid]: { ...(prev[rowid]||{}), ...patch } }))
+  }
+
+  return (
+    <div className="p-6 max-w-6xl mx-auto font-sans">
+      <h1 className="text-2xl font-bold mb-4">TESS ADQL Lightcurve Reviewer (szablon)</h1>
+      <p className="mb-4 text-sm text-gray-700">Opis: wklej ADQL do TAP (MAST) który zwraca kolumny: <code>ra</code>, <code>dec</code> i kolumnę z URL do produktu/preview (nazwa kolumny może być <code>access_url</code>, <code>preview_url</code> lub podobna). Po wykonaniu zapytania lista obiektów pojawi się poniżej — dla każdego możesz dodać nazwę, kategorię i opis. Anotacje są zapisywane w localStorage. Możesz pobrać tabelę jako CSV.</p>
+
+      <label className="block text-sm font-medium">ADQL (dostosuj nazwę tabeli z MAST)</label>
+      <textarea value={adql} onChange={e=>setAdql(e.target.value)} className="w-full h-36 p-2 border rounded mb-2 font-mono" />
+      <div className="flex gap-2 mb-6">
+        <button onClick={runAdql} className="px-4 py-2 bg-blue-600 text-white rounded" disabled={loading}>{loading? 'Ładowanie...':'Uruchom ADQL'}</button>
+        <button onClick={()=>{ setRows([]); setError(null) }} className="px-4 py-2 border rounded">Wyczyść</button>
+        <button onClick={downloadCSV} className="px-4 py-2 border rounded">Pobierz CSV z anotacjami</button>
+      </div>
+
+      {error && <div className="p-3 bg-red-100 text-red-700 rounded mb-4">Błąd: {error}</div>}
+
+      <div className="grid grid-cols-1 gap-4">
+        {rows.map((r, idx) => (
+          <div key={r._rowid||idx} className="p-3 border rounded flex gap-4 items-start">
+            <div style={{width:180, height:120, background:'#f3f4f6', display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden'}}>
+              {r.preview_url ? (
+                // show image if URL ends with png/jpg or is data URI
+                (r.preview_url.match(/\.(png|jpg|jpeg)$/i) || r.preview_url.startsWith('data:')) ? (
+                  <img src={r.preview_url} alt="preview" style={{maxWidth:'100%', maxHeight:'100%'}} />
+                ) : (
+                  <div style={{padding:8, textAlign:'center'}}>
+                    <div className="text-xs">Brak miniatury PNG/IMG</div>
+                    <a href={r.preview_url} target="_blank" rel="noreferrer" className="text-sm underline">Otwórz produkt</a>
+                  </div>
+                )
+              ) : (
+                <div className="text-xs text-gray-500">Brak kolumny z URL; zwróć access_url lub preview_url w ADQL.</div>
+              )}
+            </div>
+
+            <div className="flex-1">
+              <div className="flex gap-4 items-center justify-between">
+                <div>
+                  <div className="text-sm font-medium">ID: {r.obs_id || r._rowid}</div>
+                  <div className="text-xs text-gray-600">RA: {r.ra || '-'} DEC: {r.dec || '-'}</div>
+                </div>
+                <div className="text-sm text-gray-500">row #{idx+1}</div>
+              </div>
+
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2">
+                <input placeholder="Nazwa" value={(annotations[r._rowid]||{}).name||''} onChange={e=>updateAnnotation(r._rowid, {name:e.target.value})} className="p-2 border rounded" />
+                <input placeholder="Kategoria" value={(annotations[r._rowid]||{}).category||''} onChange={e=>updateAnnotation(r._rowid, {category:e.target.value})} className="p-2 border rounded" />
+                <select value={(annotations[r._rowid]||{}).quality||''} onChange={e=>updateAnnotation(r._rowid, {quality:e.target.value})} className="p-2 border rounded">
+                  <option value="">Ocena</option>
+                  <option value="good">good</option>
+                  <option value="maybe">maybe</option>
+                  <option value="bad">bad</option>
+                </select>
+              </div>
+
+              <textarea placeholder="Opis / komentarz" value={(annotations[r._rowid]||{}).description||''} onChange={e=>updateAnnotation(r._rowid, {description:e.target.value})} className="w-full mt-2 p-2 border rounded h-20" />
+
+              <div className="mt-2 flex gap-2 text-sm">
+                <button onClick={()=>{
+                  // open full product in new tab
+                  const url = r.preview_url || r.access_url
+                  if (url) window.open(url, '_blank')
+                }} className="px-3 py-1 border rounded">Otwórz produkt</button>
+
+                <button onClick={()=>{
+                  // quick-copy coordinates
+                  navigator.clipboard?.writeText(`${r.ra||''}, ${r.dec||''}`)
+                }} className="px-3 py-1 border rounded">Kopiuj współrzędne</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 text-sm text-gray-600">
+        <h3 className="font-semibold">Uwaga / wskazówki</h3>
+        <ul className="list-disc pl-5 mt-2">
+          <li>Z tego szablonu: musisz dostosować ADQL do tabel MAST TAP (nazwy tabel/kolumn mogą się różnić). ADQL powinien zwracać URL do produktu lub podglądu (preview/access/product).</li>
+          <li>Jeśli endpoint TAP blokuje CORS, uruchom prosty proxy (np. GitHub Action + serverless function) albo użyj serwera pośredniczącego do wykonywania zapytań TAP.</li>
+          <li>Renderowanie surowych plików FITS (lightcurve fits/time series) wymaga biblioteki JS (np. jsfits). Ten szablon pokazuje miniatury jeśli TAP zwraca gotowe PNG/JPG - dodanie parsera FITS i rysowania krzywej po stronie klienta można rozszerzyć (dorzucić bibliotekę do projektu).</li>
+          <li>Anotacje są przechowywane w <code>localStorage</code>. Możesz podmienić na backend (Firebase, GitHub Issues/PR, Google Sheets, lub prosty JSON store) aby współdzielić wyniki między użytkownikami.</li>
+        </ul>
+      </div>
+    </div>
+  )
+}
+
+/*
+Notes for deployment and improvements (summary for README):
+
+1) ADQL and TAP
+- Use MAST TAP endpoint (https://mast.stsci.edu/tap/sync) or other TAP service that exposes TESS products.
+- Example ADQL (pseudo):
+  SELECT ra, dec, obs_id, access_url FROM <tess_dataproducts_table> WHERE obs_collection='TESS' AND dataproduct_type='timeseries'
+- Make sure FORMAT=csv in TAP request so this client can parse results easily.
+
+2) CORS
+- If you encounter CORS errors in the browser, you have options:
+  - Deploy a tiny proxy (serverless function) that forwards the TAP POST and returns the TAP response.
+  - Run ADQL server-side (GitHub Actions, serverless) and store results in a JSON file served to the frontend.
+
+3) FITS -> PNG or plotting
+- To draw light curves from FITS on the client, add a JS FITS parser (e.g. 'jsfitsio' or 'fitsjs') and a plotting lib (Chart.js, Recharts). Keep heavy parsing to server if many files.
+
+4) Storing annotations
+- Right now localStorage; for multi-user store use Firebase/Firestore, Supabase, or commit JSON/CSV to a GitHub repo via its API.
+
+5) Licensing / attribution
+- Respect data provider (MAST/TESS) attribution rules when publishing derived products.
+
+*/
