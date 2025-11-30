@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>test_lsst_lc_catalogue</title>
+  <title>Rubin Lightcurve Explorer</title>
   <style>
     body { font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; background:#f8fafc; color:#111827; margin:0; padding:20px;}
     .container{max-width:1100px;margin:0 auto}
@@ -21,32 +21,25 @@
     canvas{width:100%;height:260px;border-radius:8px;background:white}
     .small{font-size:13px;color:#4b5563}
     .muted{color:#6b7280;font-size:13px}
+    .hint{font-size:13px;color:#374151;margin-top:8px}
   </style>
 </head>
 <body>
   <div class="container">
-    <header><h1>test_lsst_lc_catalogue</h1></header>
+    <header><h1>Rubin Lightcurve Explorer</h1></header>
 
     <section class="panel">
       <div class="row" style="align-items:center">
-        <div class="col" style="max-width:220px">
-          <label>RA <input id="ra" type="text" value="150.0"></label>
-        </div>
-        <div class="col" style="max-width:220px">
-          <label>DEC <input id="dec" type="text" value="2.0"></label>
-        </div>
-        <div class="col" style="max-width:140px">
-          <label>Radius [deg] <input id="radius" type="number" step="0.01" value="0.2"></label>
-        </div>
-        <div class="col" style="max-width:140px">
-          <label>Limit (objects) <input id="limit" type="number" value="20"></label>
-        </div>
+        <div class="col" style="max-width:220px"><label>RA <input id="ra" type="text" value="150.0"></label></div>
+        <div class="col" style="max-width:220px"><label>DEC <input id="dec" type="text" value="2.0"></label></div>
+        <div class="col" style="max-width:140px"><label>Radius [deg] <input id="radius" type="number" step="0.01" value="0.2"></label></div>
+        <div class="col" style="max-width:140px"><label>Limit (objects) <input id="limit" type="number" value="20"></label></div>
         <div style="min-width:160px">
           <button id="fetchBtn">Pobierz ADQL</button>
           <button id="exportBtn" class="btn-ghost" style="margin-left:6px">Eksport CSV</button>
         </div>
       </div>
-      <div class="muted" style="margin-top:8px">Uwaga: domyślnie wysyła POST na <code>/api/adql</code>. Jeśli używasz GitHub Pages musisz wdrożyć proxy (np. Vercel, Netlify) lub zmienić URL na CORS-enabled endpoint.</div>
+      <div class="hint">Domyślnie POST → <code>/api/adql</code>. Jeśli używasz GitHub Pages: wdroż proxy (Vercel/Netlify) lub zmień URL w kodzie na CORS-enabled TAP.</div>
     </section>
 
     <section class="panel" style="display:flex;gap:12px">
@@ -64,9 +57,7 @@
           <input id="name" type="text" placeholder="Nazwa (opcjonalnie)" style="margin-top:6px;">
           <input id="category" type="text" placeholder="Kategoria (opcjonalnie)" style="margin-top:6px;">
           <textarea id="note" rows="3" placeholder="Opis / notatki" style="margin-top:6px"></textarea>
-          <div style="margin-top:6px">
-            <button id="saveAnnotation">Zapisz</button>
-          </div>
+          <div style="margin-top:6px"><button id="saveAnnotation">Zapisz</button></div>
         </div>
       </div>
 
@@ -76,17 +67,16 @@
       </div>
     </section>
 
-    <footer style="margin-top:12px" class="muted">Adnotacje są zapisywane lokalnie w localStorage. Aby zapisać centralnie, dodaj backend zapisu.</footer>
+    <footer style="margin-top:12px" class="muted">Adnotacje są zapisywane lokalnie (localStorage). Aby centralne zapisy — dodaj backend zapisujący adnotacje.</footer>
   </div>
 
 <script>
-/* ---------- Konfiguracja ---------- */
-const ADQL_POST_URL = '/api/adql'; // <- zmień na proxy lub full TAP endpoint (uwaga na CORS)
-const DEFAULT_ADQL_TABLE = `dp02_dc2_catalogs.ForcedSource`; // dostosuj jeśli trzeba
+/* ---------- Konfiguracja (zmień jeśli potrzebujesz) ---------- */
+let ADQL_POST_URL = '/api/adql';       // domyślne — proxy (Vercel/Netlify) lub Express server
+const DEFAULT_ADQL_TABLE = `dp02_dc2_catalogs.ForcedSource`; // dostosuj do swojego TAP/DR/DP
 
-/* ---------- Helpers / ADQL builder ---------- */
+/* ---------- ADQL builder ---------- */
 function buildAdqlForRegion(ra, dec, radiusDeg, maxRows){
-  // Ten ADQL jest przykładowy — dopasuj nazwy kolumn do Twojego TAP
   return `
 SELECT objectId, ra, dec, mjd, psfFluxMag as mag, psfFluxMagErr as magerr, filter
 FROM ${DEFAULT_ADQL_TABLE}
@@ -96,22 +86,20 @@ LIMIT ${maxRows * 1000}
 `;
 }
 
-/* ---------- Parsowanie odpowiedzi TAP (próbujemy kilku formatów) ---------- */
+/* ---------- HTTP POST helper ---------- */
 async function postAdql(adql){
-  // wysyła JSON {adql: "..."} i oczekuje JSON zwrotny z fields + data lub rows
   const resp = await fetch(ADQL_POST_URL, {
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ adql })
   });
-  if (!resp.ok) throw new Error('HTTP ' + resp.status);
-  const txt = await resp.text();
-  try { return JSON.parse(txt); }
-  catch(e){ throw new Error('Nie udało się sparsować odpowiedzi: ' + e.message + ' -> ' + txt.slice(0,300)); }
+  if (!resp.ok) throw new Error('HTTP ' + resp.status + ' ' + resp.statusText);
+  const text = await resp.text();
+  try { return JSON.parse(text); } catch(e) { throw new Error('Nieparsowalna odpowiedź: ' + e.message + ' -> ' + text.slice(0,300)); }
 }
 
+/* ---------- Parsery ---------- */
 function parseTapJson(data){
-  // obsługuje formę {fields: [{name}], data: [[...]]} oraz {rows: [...]}, lub tablica obiektów
   if (Array.isArray(data)) return data;
   if (data.rows && Array.isArray(data.rows)) return data.rows;
   if (data.data && data.fields) {
@@ -122,14 +110,12 @@ function parseTapJson(data){
       return obj;
     });
   }
-  // fallback: jeśli już mamy pola w top-level keys "result" lub "data"
   if (Array.isArray(data.result)) return data.result;
   if (Array.isArray(data.data)) return data.data;
-  // ostatnia próba - zwróć pustą
   return [];
 }
 
-/* ---------- Grupowanie po objectId ---------- */
+/* ---------- Grouping ---------- */
 function groupByObject(rows){
   const map = new Map();
   for (const r of rows){
@@ -138,14 +124,12 @@ function groupByObject(rows){
     if (!map.has(oid)) map.set(oid, { objectId: oid, ra: parseFloat(r.ra), dec: parseFloat(r.dec), measurements: [] });
     map.get(oid).measurements.push({ mjd: Number(r.mjd), mag: Number(r.mag), magerr: Number(r.magerr), filter: r.filter });
   }
-  const arr = Array.from(map.values()).map(o=>({...o, measurements: o.measurements.sort((a,b)=>a.mjd - b.mjd)}));
-  return arr;
+  return Array.from(map.values()).map(o=>({...o, measurements: o.measurements.sort((a,b)=>a.mjd - b.mjd)}));
 }
 
-/* ---------- UI / State ---------- */
+/* ---------- State & UI refs ---------- */
 let objects = []; // {objectId, ra, dec, measurements, annotations, png}
 let currentIndex = 0;
-
 const listDiv = document.getElementById('list');
 const fetchBtn = document.getElementById('fetchBtn');
 const exportBtn = document.getElementById('exportBtn');
@@ -158,16 +142,8 @@ const categoryInput = document.getElementById('category');
 const noteInput = document.getElementById('note');
 const saveAnnotationBtn = document.getElementById('saveAnnotation');
 
-function saveToLocal(){
-  localStorage.setItem('rle_objects_v1', JSON.stringify(objects));
-}
-function loadFromLocal(){
-  try {
-    const s = localStorage.getItem('rle_objects_v1');
-    if (!s) return;
-    objects = JSON.parse(s);
-  } catch(e){ console.warn('localStorage parse err', e) }
-}
+function saveToLocal(){ localStorage.setItem('rle_objects_v1', JSON.stringify(objects)); }
+function loadFromLocal(){ try { const s = localStorage.getItem('rle_objects_v1'); if (s) objects = JSON.parse(s); } catch(e){ console.warn(e); } }
 
 function renderList(){
   listDiv.innerHTML = '';
@@ -178,7 +154,7 @@ function renderList(){
     it.appendChild(thumb);
     const info = document.createElement('div'); info.style.flex='1';
     const title = document.createElement('div'); title.textContent = o.annotations?.name || o.objectId; title.style.fontWeight='600';
-    const coords = document.createElement('div'); coords.className='small muted'; coords.textContent = `${o.ra?.toFixed(5) || ''}, ${o.dec?.toFixed(5)||''}`;
+    const coords = document.createElement('div'); coords.className='small muted'; coords.textContent = `${o.ra?.toFixed(5)||''}, ${o.dec?.toFixed(5)||''}`;
     const cat = document.createElement('div'); cat.className='small'; cat.textContent = o.annotations?.category || '';
     info.appendChild(title); info.appendChild(coords); info.appendChild(cat);
     it.appendChild(info);
@@ -189,11 +165,9 @@ function renderList(){
 }
 
 function renderCurrent(){
-  if (objects.length===0) {
-    clearCanvas(); nameInput.value=''; categoryInput.value=''; noteInput.value=''; return;
-  }
-  if (currentIndex < 0) currentIndex = 0;
-  if (currentIndex >= objects.length) currentIndex = objects.length -1;
+  if (objects.length===0){ clearCanvas(); nameInput.value=''; categoryInput.value=''; noteInput.value=''; renderList(); return; }
+  if (currentIndex<0) currentIndex=0;
+  if (currentIndex>=objects.length) currentIndex=objects.length-1;
   const o = objects[currentIndex];
   nameInput.value = o.annotations?.name || '';
   categoryInput.value = o.annotations?.category || '';
@@ -202,42 +176,33 @@ function renderCurrent(){
   renderList();
 }
 
-/* ---------- Canvas drawing (simple) ---------- */
-function clearCanvas(){
-  const ctx = lcCanvas.getContext('2d'); ctx.clearRect(0,0,lcCanvas.width,lcCanvas.height); ctx.fillStyle='#f9fafb'; ctx.fillRect(0,0,lcCanvas.width,lcCanvas.height);
-}
+/* ---------- Canvas draw ---------- */
+function clearCanvas(){ const ctx = lcCanvas.getContext('2d'); ctx.clearRect(0,0,lcCanvas.width,lcCanvas.height); ctx.fillStyle='#f9fafb'; ctx.fillRect(0,0,lcCanvas.width,lcCanvas.height); }
 function drawLightcurve(meas){
   const dpr = window.devicePixelRatio || 1;
   lcCanvas.width = lcCanvas.clientWidth * dpr;
   lcCanvas.height = lcCanvas.clientHeight * dpr;
-  const ctx = lcCanvas.getContext('2d'); ctx.scale(dpr,dpr);
+  const ctx = lcCanvas.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.clearRect(0,0,lcCanvas.clientWidth,lcCanvas.clientHeight);
   ctx.fillStyle='#fff'; ctx.fillRect(0,0,lcCanvas.clientWidth,lcCanvas.clientHeight);
   if (!meas || meas.length===0){ ctx.fillStyle='#6b7280'; ctx.fillText('Brak danych', 10,20); return; }
-  const margin = 36;
-  const W = lcCanvas.clientWidth, H = lcCanvas.clientHeight;
-  const w = W - margin*2, h = H - margin*2;
+  const margin = 36; const W = lcCanvas.clientWidth, H = lcCanvas.clientHeight; const w = W - margin*2, h = H - margin*2;
   const mjd = meas.map(m=>m.mjd); const mag = meas.map(m=>m.mag);
   const minM = Math.min(...mjd), maxM = Math.max(...mjd);
   const minMag = Math.min(...mag), maxMag = Math.max(...mag);
   function sx(x){ return margin + ((x - minM)/( (maxM - minM) || 1 ))*w; }
   function sy(y){ return margin + (1 - ((y - minMag)/( (maxMag - minMag) || 1 )) )*h; }
-  // axes
   ctx.strokeStyle = '#e6edf3'; ctx.beginPath(); ctx.moveTo(margin, margin); ctx.lineTo(margin, margin+h); ctx.lineTo(margin+w, margin+h); ctx.stroke();
-  // line
   ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 1.5; ctx.beginPath();
   meas.forEach((pt,i)=>{ const x=sx(pt.mjd), y=sy(pt.mag); if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
   ctx.stroke();
-  // points
-  ctx.fillStyle = '#1e40af';
-  meas.forEach(pt=>{ const x=sx(pt.mjd), y=sy(pt.mag); ctx.beginPath(); ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fill(); });
-  // labels
+  ctx.fillStyle = '#1e40af'; meas.forEach(pt=>{ const x=sx(pt.mjd), y=sy(pt.mag); ctx.beginPath(); ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fill(); });
   ctx.fillStyle = '#374151'; ctx.font='12px sans-serif'; ctx.fillText('MJD', W/2, H-8); ctx.fillText('mag (lower = brighter)', 6, 12);
 }
 
 /* ---------- Events ---------- */
 fetchBtn.addEventListener('click', async ()=>{
-  fetchBtn.disabled = true; fetchBtn.textContent = 'Ładowanie...';
+  fetchBtn.disabled=true; fetchBtn.textContent='Ładowanie...';
   try {
     const ra = document.getElementById('ra').value;
     const dec = document.getElementById('dec').value;
@@ -247,7 +212,6 @@ fetchBtn.addEventListener('click', async ()=>{
     const raw = await postAdql(adql);
     const rows = parseTapJson(raw);
     const objs = groupByObject(rows).slice(0, limit);
-    // merge previous annotations if ids match
     loadFromLocal();
     const merged = objs.map(o=>{
       const prev = objects.find(x=>x.objectId==o.objectId);
@@ -258,49 +222,24 @@ fetchBtn.addEventListener('click', async ()=>{
     saveToLocal();
     renderCurrent();
   } catch(e){ alert('Błąd: ' + e.message); console.error(e); }
-  finally { fetchBtn.disabled=false; fetchBtn.textContent='Pobierz ADQL' }
+  finally { fetchBtn.disabled=false; fetchBtn.textContent='Pobierz ADQL'; }
 });
 
 prevBtn.addEventListener('click', ()=>{ currentIndex = Math.max(0, currentIndex-1); renderCurrent(); });
 nextBtn.addEventListener('click', ()=>{ currentIndex = Math.min(objects.length-1, currentIndex+1); renderCurrent(); });
 
-savePngBtn.addEventListener('click', ()=>{
-  if (!objects[currentIndex]) return;
-  const data = lcCanvas.toDataURL('image/png');
-  objects[currentIndex].png = data;
-  saveToLocal();
-  renderList();
-  alert('Zapisano PNG (localStorage). Możesz eksportować CSV.');
-});
+savePngBtn.addEventListener('click', ()=>{ if (!objects[currentIndex]) return; const data = lcCanvas.toDataURL('image/png'); objects[currentIndex].png = data; saveToLocal(); renderList(); alert('Zapisano PNG (localStorage). Możesz eksportować CSV.'); });
 
-saveAnnotationBtn.addEventListener('click', ()=>{
-  if (!objects[currentIndex]) return;
-  const o = objects[currentIndex];
-  o.annotations = { name: nameInput.value, category: categoryInput.value, note: noteInput.value };
-  objects[currentIndex] = o;
-  saveToLocal();
-  renderList();
-  alert('Adnotacja zapisana lokalnie.');
-});
+saveAnnotationBtn.addEventListener('click', ()=>{ if (!objects[currentIndex]) return; const o = objects[currentIndex]; o.annotations = { name: nameInput.value, category: categoryInput.value, note: noteInput.value }; objects[currentIndex]=o; saveToLocal(); renderList(); alert('Adnotacja zapisana lokalnie.'); });
 
-exportBtn.addEventListener('click', ()=>{
-  const lines = objects.map(o=>{
-    const name = (o.annotations?.name||'').replace(/"/g,'""');
-    const cat  = (o.annotations?.category||'').replace(/"/g,'""');
-    const note = (o.annotations?.note||'').replace(/"/g,'""').replace(/\n/g,' ');
-    const png  = o.png ? o.png : '';
-    return `"${o.objectId}","${o.ra}","${o.dec}","${name}","${cat}","${note}","${png}"`;
-  });
-  const header = 'objectId,ra,dec,name,category,note,png';
-  const csv = [header, ...lines].join('\\n');
-  const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download='rubin_annotations.csv'; a.click(); URL.revokeObjectURL(url);
-});
+exportBtn.addEventListener('click', ()=>{ const lines = objects.map(o=>{ const name = (o.annotations?.name||'').replace(/"/g,'""'); const cat  = (o.annotations?.category||'').replace(/"/g,'""'); const note = (o.annotations?.note||'').replace(/"/g,'""').replace(/\n/g,' '); const png  = o.png ? o.png : ''; return `"${o.objectId}","${o.ra}","${o.dec}","${name}","${cat}","${note}","${png}"`; }); const header = 'objectId,ra,dec,name,category,note,png'; const csv = [header, ...lines].join('\n'); const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href=url; a.download='rubin_annotations.csv'; a.click(); URL.revokeObjectURL(url); });
 
 /* ---------- Init ---------- */
-loadFromLocal();
-renderCurrent();
+function loadFromLocal(){ try { const s = localStorage.getItem('rle_objects_v1'); if (s) objects = JSON.parse(s); } catch(e){ console.warn(e); } }
+loadFromLocal(); renderCurrent();
+
+/* ---------- Helpful function for testing: change ADQL_POST_URL at runtime ---------- */
+window.setAdqlUrl = function(url){ ADQL_POST_URL = url; console.info('ADQL_POST_URL set to', ADQL_POST_URL); };
 
 </script>
 </body>
